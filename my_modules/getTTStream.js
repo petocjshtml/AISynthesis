@@ -39,7 +39,7 @@ async function getTTStream(text_to_speech) {
     const formData = new FormData();
     formData.append("locale", "sk-SK");
     formData.append("text", text_to_speech);
-    formData.append("voice", "sk-SK-LukasNeural");
+    formData.append("voice", "sk-SK-ViktoriaNeural"); //sk-SK-LukasNeural
     formData.append("style", "0");
     const fetchResponse = await fetch(url, {
       method: "POST",

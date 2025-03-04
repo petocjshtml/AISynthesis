@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="sk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Text To Speech</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="container mt-5">
+      <h1 class="text-center mb-4">AI syntéza Viktória</h1>
+      <div class="row">
+        <div class="col-md-8">
+          <textarea
+            id="textInput"
+            class="form-control"
+            rows="10"
+            placeholder="Zadajte text..."
+          ></textarea>
+        </div>
+        <div class="col-md-4 d-flex align-items-center flex-column">
+          <h5 id="statusText" class="text-primary mb-2" style="display: none">
+            Processing...
+          </h5>
+          <button id="generateBtn" class="btn btn-primary w-100 mb-3">
+            Generate
+          </button>
+          <audio
+            id="audioPlayer"
+            controls
+            class="w-100"
+            style="display: none"
+          ></audio>
+          <a
+            id="downloadBtn"
+            class="btn btn-success mt-2"
+            style="display: none"
+            download
+          >
+            Download
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document
+        .getElementById("generateBtn")
+        .addEventListener("click", async () => {
+          const text = document.getElementById("textInput").value;
+          const statusText = document.getElementById("statusText");
+          const audioPlayer = document.getElementById("audioPlayer");
+          const downloadBtn = document.getElementById("downloadBtn");
+          statusText.style.display = "block";
+          statusText.textContent = "Processing...";
+          audioPlayer.style.display = "none";
+          downloadBtn.style.display = "none";
+
+          try {
+            const response = await fetch("/generate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text }),
+            });
+
+            const data = await response.json();
+            console.log("Response data:", data);
+
+            if (data.audioUrl) {
+              const fullUrl = data.audioUrl.startsWith("http")
+                ? data.audioUrl
+                : `http://localhost:3000${data.audioUrl}`;
+
+              const filename = fullUrl.split("/").pop();
+              statusText.style.display = "none";
+              audioPlayer.style.display = "block";
+              audioPlayer.src = fullUrl;
+              downloadBtn.style.display = "block";
+              downloadBtn.href = fullUrl;
+              downloadBtn.download = filename;
+            } else {
+              statusText.textContent =
+                "Chyba: Nebolo vygenerované žiadne audio.";
+            }
+          } catch (error) {
+            console.error("Chyba:", error);
+            statusText.textContent = "Chyba pri generovaní.";
+          }
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

@@ -16,7 +16,6 @@
         <div class="col-md-8">
           <textarea
             id="textInput"
-            maxlength="1400"
             class="form-control"
             rows="10"
             placeholder="Zadajte text..."
@@ -26,7 +25,7 @@
           <h5 id="statusText" class="text-primary mb-2" style="display: none">
             Processing...
           </h5>
-          <button id="generateBtn" class="btn btn-primary w-100 mb-3">
+          <button id="generateBtn" class="btn btn-primary w-100 mb-3 mt-2">
             Generate
           </button>
           <audio
@@ -55,41 +54,42 @@
           const statusText = document.getElementById("statusText");
           const audioPlayer = document.getElementById("audioPlayer");
           const downloadBtn = document.getElementById("downloadBtn");
+
           statusText.style.display = "block";
-          statusText.textContent = "Processing...";
+          statusText.innerHTML = "🔄 Začína spracovanie...";
           audioPlayer.style.display = "none";
           downloadBtn.style.display = "none";
 
-          try {
-            const response = await fetch("/generate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text }),
-            });
+          const eventSource = new EventSource(
+            `/generate?text=${encodeURIComponent(text)}`
+          );
 
-            const data = await response.json();
-            console.log("Response data:", data);
+          eventSource.onmessage = (event) => {
+            console.log("📡 Prijatá správa:", event.data);
 
-            if (data.audioUrl) {
-              const fullUrl = data.audioUrl.startsWith("http")
-                ? data.audioUrl
-                : `http://localhost:3000${data.audioUrl}`;
+            if (event.data.startsWith("✅ Hotovo! Audio vygenerované:")) {
+              eventSource.close();
 
-              const filename = fullUrl.split("/").pop();
-              statusText.style.display = "none";
+              const audioUrl = event.data
+                .replace("✅ Hotovo! Audio vygenerované: ", "")
+                .trim();
+
+              statusText.innerHTML = `✅ <b>Hotovo! Audio bolo úspešne vygenerované.</b>`;
               audioPlayer.style.display = "block";
-              audioPlayer.src = fullUrl;
+              audioPlayer.src = audioUrl;
+              audioPlayer.load();
               downloadBtn.style.display = "block";
-              downloadBtn.href = fullUrl;
-              downloadBtn.download = filename;
+              downloadBtn.href = audioUrl;
+              downloadBtn.download = audioUrl.split("/").pop();
             } else {
-              statusText.textContent =
-                "Chyba: Nebolo vygenerované žiadne audio.";
+              statusText.innerHTML = event.data;
             }
-          } catch (error) {
-            console.error("Chyba:", error);
-            statusText.textContent = "Chyba pri generovaní.";
-          }
+          };
+
+          eventSource.onerror = () => {
+            console.log("🔄 SSE spojenie ukončené s chybou, ale ignorujeme.");
+            eventSource.close();
+          };
         });
     </script>
 

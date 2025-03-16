@@ -5,8 +5,9 @@ const { wrapper } = require("axios-cookiejar-support");
 const cookieJar = new tough.CookieJar();
 const client = wrapper(axios.create({ jar: cookieJar }));
 const saveMp3 = require("./saveMp3");
+const path = require("path");
 
-async function getTTStream(text_to_speech) {
+async function getTTStream(textChunks, res) {
   try {
     const response = await client.get(
       "https://speechactors.com/text-to-speech/slovak-slovakia"
@@ -19,55 +20,95 @@ async function getTTStream(text_to_speech) {
       cookiesArray.find((cookie) => cookie.key === "csrf_cookie_name")?.value ||
       "";
     const url = "https://speechactors.com/open-tool/generate";
-    const headers = {
-      accept: "application/json, text/plain, */*",
-      "accept-language": "sk,en;q=0.9,en-GB;q=0.8,en-US;q=0.7",
-      priority: "u=1, i",
-      "sec-ch-ua":
-        '"Not(A:Brand";v="99", "Microsoft Edge";v="133", "Chromium";v="133"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
-      "sec-fetch-dest": "empty",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-site": "same-origin",
-      "x-csrf-token": csrfToken,
-      cookie: cookies,
-      Referer: "https://speechactors.com/text-to-speech/slovak-slovakia",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
-    };
 
-    const formData = new FormData();
-    formData.append("locale", "sk-SK");
-    formData.append("text", text_to_speech);
-    formData.append("voice", "sk-SK-ViktoriaNeural"); //sk-SK-LukasNeural
-    formData.append("style", "0");
-    const fetchResponse = await fetch(url, {
-      method: "POST",
-      headers: headers,
-      body: formData,
+    const requests = textChunks.map(async (text, index) => {
+      res.write(
+        `data: Odosiela sa request pre spracovanie textu ${index + 1}/${
+          textChunks.length
+        }\n\n`
+      );
+      res.flush?.();
+
+      const formData = new FormData();
+      formData.append("locale", "sk-SK");
+      formData.append("text", text);
+      formData.append("voice", "sk-SK-ViktoriaNeural");
+      formData.append("style", "0");
+
+      const fetchResponse = await fetch(url, {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/plain, */*",
+          "x-csrf-token": csrfToken,
+          cookie: cookies,
+        },
+        body: formData,
+      });
+
+      if (!fetchResponse.ok)
+        throw new Error(`HTTP error! Status: ${fetchResponse.status}`);
+      const data = await fetchResponse.json();
+
+      if (!data.stream || typeof data.stream !== "string") {
+        throw new Error(
+          `❌ API nevrátilo platný stream pre text č. ${index + 1}`
+        );
+      }
+
+      return data.stream;
     });
 
-    if (!fetchResponse.ok) {
-      throw new Error(`HTTP error! Status: ${fetchResponse.status}`);
+    const streams = await Promise.all(requests);
+    res.write(
+      `data: Streamy získané, začínam ich dekódovať do formátu mp3\n\n`
+    );
+    res.flush?.();
+
+    const savePromises = streams.map(async (stream, index) => {
+      if (!stream) {
+        res.write(
+          `data: ❌ Chyba: Stream pre text č. ${index + 1} nebol získaný\n\n`
+        );
+        res.flush?.();
+        return null;
+      }
+
+      const filename = generateUniqueFilename();
+      const outputPath = path.join(__dirname, "audios", filename);
+
+      try {
+        const savedPath = await saveMp3(stream, outputPath);
+        res.write(
+          `data: Dekódovanie streamu č.${index + 1} prebehlo úspešne\n\n`
+        );
+        res.flush?.();
+        return savedPath;
+      } catch (error) {
+        res.write(
+          `data: ❌ Chyba pri dekódovaní streamu č.${index + 1}: ${
+            error.message
+          }\n\n`
+        );
+        res.flush?.();
+        return null;
+      }
+    });
+
+    const audioPaths = (await Promise.all(savePromises)).filter(Boolean);
+    if (audioPaths.length === 0) {
+      throw new Error("❌ Žiadny audio súbor nebol úspešne spracovaný.");
     }
 
-    var path = "";
-    var stream = "";
-
-    await fetchResponse.json().then((data) => {
-      stream = data.stream;
-    });
-
-    await saveMp3(stream, "audios/" + generateUniqueFilename()).then(
-      (path_of_synthesis) => {
-        path = path_of_synthesis;
-        console.log(`MP3 uložené ako: ${path}`);
-      }
+    res.write(
+      `data: Všetky streamy boli úspešne dekódované do formátu mp3!\n\n`
     );
+    res.flush?.();
 
-    return path;
+    return audioPaths;
   } catch (error) {
-    console.error("Chyba pri spracovaní:", error);
+    res.write(`data: ❌ Chyba pri spracovaní: ${error.message}\n\n`);
+    res.flush?.();
+    return [];
   }
 }
 
